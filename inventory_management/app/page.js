@@ -1,17 +1,41 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { Box, Stack, Typography, Button, Modal, TextField } from '@mui/material'
-import { firestore } from '@/firebase'
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Stack,
+  Typography,
+  Button,
+  Modal,
+  TextField,
+  CircularProgress,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  IconButton,
+} from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import RemoveIcon from '@mui/icons-material/Remove';
+import { firestore } from '@/firebase';
 import {
   collection,
   doc,
   getDocs,
-  query,
   setDoc,
   deleteDoc,
   getDoc,
-} from 'firebase/firestore'
+  query,
+  where,
+} from 'firebase/firestore';
+import 'tailwindcss/tailwind.css';
 
 const style = {
   position: 'absolute',
@@ -19,144 +43,214 @@ const style = {
   left: '50%',
   transform: 'translate(-50%, -50%)',
   width: 400,
-  bgcolor: 'white',
-  border: '2px solid #000',
+  bgcolor: 'background.paper',
   boxShadow: 24,
   p: 4,
   display: 'flex',
   flexDirection: 'column',
   gap: 3,
-}
+  borderRadius: '8px',
+};
 
 export default function Home() {
-  const [inventory, setInventory] = useState([])
-  const [open, setOpen] = useState(false)
-  const [itemName, setItemName] = useState('')
-  const handleOpen = () => setOpen(true)
-  const handleClose = () => setOpen(false)
+  const [inventory, setInventory] = useState({});
+  const [open, setOpen] = useState(false);
+  const [itemName, setItemName] = useState('');
+  const [shelfName, setShelfName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [location, setLocation] = useState('');
 
-  const updateInventory = async () => {
-    const q = query(collection(firestore, 'inventory'))
-    const querySnapshot = await getDocs(q)
-    const items = []
+  const handleOpen = () => setOpen(true);
+  const handleClose = () => setOpen(false);
+
+  const updateInventory = async (selectedLocation) => {
+    setLoading(true);
+    const q = query(collection(firestore, 'inventory'), where('location', '==', selectedLocation));
+    const querySnapshot = await getDocs(q);
+    const items = {};
     querySnapshot.forEach((doc) => {
-      items.push({ name: doc.id, ...doc.data() })
-    })
-    setInventory(items)
-  }
+      const data = doc.data();
+      const { shelf, name, quantity } = data;
+      if (!items[shelf]) {
+        items[shelf] = [];
+      }
+      items[shelf].push({ name, quantity, id: doc.id });
+    });
+    setInventory(items);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    updateInventory()
-  }, [])
-
-  const addItem = async (item) => {
-    const docRef = doc(collection(firestore, 'inventory'), item)
-    const docSnap = await getDoc(docRef)
-    if (docSnap.exists()) {
-      const { quantity } = docSnap.data()
-      await setDoc(docRef, { quantity: quantity + 1 })
-    } else {
-      await setDoc(docRef, { quantity: 1 })
+    if (location) {
+      updateInventory(location);
     }
-    await updateInventory()
-  }
+  }, [location]);
 
-  const removeItem = async (item) => {
-    const docRef = doc(collection(firestore, 'inventory'), item)
-    const docSnap = await getDoc(docRef)
+  const addItem = async (item, shelf, location) => {
+    const docRef = doc(collection(firestore, 'inventory'), `${location}-${item}`);
+    const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-      const { quantity } = docSnap.data()
+      const { quantity } = docSnap.data();
+      await setDoc(docRef, { name: item, quantity: quantity + 1, shelf, location });
+    } else {
+      await setDoc(docRef, { name: item, quantity: 1, shelf, location });
+    }
+    await updateInventory(location);
+  };
+
+  const removeItem = async (item, shelf, location) => {
+    const docRef = doc(collection(firestore, 'inventory'), `${location}-${item}`);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const { quantity } = docSnap.data();
       if (quantity === 1) {
-        await deleteDoc(docRef)
+        await deleteDoc(docRef);
       } else {
-        await setDoc(docRef, { quantity: quantity - 1 })
+        await setDoc(docRef, { name: item, quantity: quantity - 1, shelf, location });
       }
     }
-    await updateInventory()
+    await updateInventory(location);
+  };
+
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
+        <CircularProgress />
+      </Box>
+    );
   }
+
   return (
     <Box
       width="100vw"
       height="100vh"
-      display={'flex'}
-      justifyContent={'center'}
-      flexDirection={'column'}
-      alignItems={'center'}
-      gap={2}
+      display="flex"
+      justifyContent="center"
+      alignItems="center"
+      className="bg-gray-100 p-4"
     >
-      <Modal
-        open={open}
-        onClose={handleClose}
-        aria-labelledby="modal-modal-title"
-        aria-describedby="modal-modal-description"
-      >
-        <Box sx={style}>
-          <Typography id="modal-modal-title" variant="h6" component="h2">
-            Add Item
+      <Box className="w-full max-w-4xl mx-auto p-8 bg-white shadow-lg rounded-lg">
+        <Box className="bg-blue-600 text-white p-6 rounded-t-lg mb-4">
+          <Typography variant="h3" component="h1" className="text-center font-bold">
+            Inventory Management
           </Typography>
-          <Stack width="100%" direction={'row'} spacing={2}>
-            <TextField
-              id="outlined-basic"
-              label="Item"
-              variant="outlined"
-              fullWidth
-              value={itemName}
-              onChange={(e) => setItemName(e.target.value)}
-            />
+        </Box>
+        <FormControl fullWidth className="mb-6">
+          <InputLabel id="location-select-label">Location</InputLabel>
+          <Select
+            labelId="location-select-label"
+            id="location-select"
+            value={location}
+            label="Location"
+            onChange={(e) => setLocation(e.target.value)}
+            className="bg-white"
+          >
+            <MenuItem value="Westgate">Westgate</MenuItem>
+            <MenuItem value="Glass Co">Glass Co</MenuItem>
+          </Select>
+        </FormControl>
+        {location && (
+          <>
             <Button
-              variant="outlined"
-              onClick={() => {
-                addItem(itemName)
-                setItemName('')
-                handleClose()
-              }}
+              variant="contained"
+              color="primary"
+              className="mb-6 w-full py-3 bg-blue-500 hover:bg-blue-700"
+              onClick={handleOpen}
             >
-              Add
+              Add New Item
             </Button>
-          </Stack>
-        </Box>
-      </Modal>
-      <Button variant="contained" onClick={handleOpen}>
-        Add New Item
-      </Button>
-      <Box border={'1px solid #333'}>
-        <Box
-          width="800px"
-          height="100px"
-          bgcolor={'#ADD8E6'}
-          display={'flex'}
-          justifyContent={'center'}
-          alignItems={'center'}
-        >
-          <Typography variant={'h2'} color={'#333'} textAlign={'center'}>
-            Inventory Items
-          </Typography>
-        </Box>
-        <Stack width="800px" height="300px" spacing={2} overflow={'auto'}>
-          {inventory.map(({ name, quantity }) => (
-            <Box
-              key={name}
-              width="100%"
-              minHeight="150px"
-              display={'flex'}
-              justifyContent={'space-between'}
-              alignItems={'center'}
-              bgcolor={'#f0f0f0'}
-              paddingX={5}
+            <Modal
+              open={open}
+              onClose={handleClose}
+              aria-labelledby="modal-modal-title"
+              aria-describedby="modal-modal-description"
             >
-              <Typography variant={'h3'} color={'#333'} textAlign={'center'}>
-                {name.charAt(0).toUpperCase() + name.slice(1)}
-              </Typography>
-              <Typography variant={'h3'} color={'#333'} textAlign={'center'}>
-                Quantity: {quantity}
-              </Typography>
-              <Button variant="contained" onClick={() => removeItem(name)}>
-                Remove
-              </Button>
-            </Box>
-          ))}
-        </Stack>
+              <Box sx={style} className="bg-white">
+                <Typography id="modal-modal-title" variant="h6" component="h2" className="text-center mb-4">
+                  Add Item
+                </Typography>
+                <Stack width="100%" direction="column" spacing={2}>
+                  <TextField
+                    id="outlined-item"
+                    label="Item"
+                    variant="outlined"
+                    fullWidth
+                    value={itemName}
+                    onChange={(e) => setItemName(e.target.value)}
+                    className="bg-white"
+                  />
+                  <TextField
+                    id="outlined-shelf"
+                    label="Shelf"
+                    variant="outlined"
+                    fullWidth
+                    value={shelfName}
+                    onChange={(e) => setShelfName(e.target.value)}
+                    className="bg-white"
+                  />
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    className="bg-blue-500 hover:bg-blue-700"
+                    onClick={() => {
+                      addItem(itemName, shelfName, location);
+                      setItemName('');
+                      setShelfName('');
+                      handleClose();
+                    }}
+                  >
+                    Add
+                  </Button>
+                </Stack>
+              </Box>
+            </Modal>
+            {Object.keys(inventory).map((shelf) => (
+              <Box key={shelf} className="my-4">
+                <Box
+                  width="100%"
+                  className="bg-blue-200 flex justify-center items-center rounded-t-lg py-4 shadow"
+                >
+                  <Typography variant="h5" color="#333" className="text-center font-semibold">
+                    {shelf}
+                  </Typography>
+                </Box>
+                <TableContainer component={Paper} className="rounded-b-lg shadow-lg">
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Item</TableCell>
+                        <TableCell align="right">Quantity</TableCell>
+                        <TableCell align="right">Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {inventory[shelf].map(({ name, quantity, id }) => (
+                        <TableRow key={id}>
+                          <TableCell component="th" scope="row">
+                            {name ? name.charAt(0).toUpperCase() + name.slice(1) : 'Unknown Item'}
+                          </TableCell>
+                          <TableCell align="right">{quantity}</TableCell>
+                          <TableCell align="right">
+                            <Button
+                              variant="contained"
+                              color="secondary"
+                              className="bg-red-500 hover:bg-red-700"
+                              onClick={() => removeItem(name, shelf, location)}
+                            >
+                              Remove
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            ))}
+          </>
+        )}
       </Box>
     </Box>
-  )
+  );
 }
+
