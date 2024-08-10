@@ -1,6 +1,4 @@
-'use client';
-
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import {
   Box,
   Stack,
@@ -8,249 +6,266 @@ import {
   Button,
   Modal,
   TextField,
-  CircularProgress,
-  MenuItem,
-  Select,
-  FormControl,
-  InputLabel,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  IconButton,
-} from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import RemoveIcon from '@mui/icons-material/Remove';
-import { firestore } from '@/app/firebase';
+  AppBar,
+  Toolbar,
+} from "@mui/material";
+import { firestore } from "@/app/firebaseConfig";
 import {
   collection,
   doc,
   getDocs,
+  query,
   setDoc,
   deleteDoc,
   getDoc,
-  query,
-  where,
-} from 'firebase/firestore';
-import 'tailwindcss/tailwind.css';
+} from "firebase/firestore";
+import { removeLoginCookie } from "./../Utils/cookie";
+import Image from "next/image";
+import logo from "../Images/blackbrewlogo.png";
 
 const style = {
-  position: 'absolute',
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
+  position: "absolute",
+  top: "50%",
+  left: "50%",
+  transform: "translate(-50%, -50%)",
   width: 400,
-  bgcolor: 'background.paper',
+  bgcolor: "white",
+  border: "2px solid #000",
   boxShadow: 24,
   p: 4,
-  display: 'flex',
-  flexDirection: 'column',
+  display: "flex",
+  flexDirection: "column",
   gap: 3,
-  borderRadius: '8px',
 };
 
-export default function Home() {
-  const [inventory, setInventory] = useState({});
+const NavBar = ({ user, handleSignOut }) => {
+  return (
+    <AppBar position="static" sx={{ backgroundColor: "#123456" }}>
+      <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
+        <Box display="flex" alignItems="center">
+          <Image
+            src={logo}
+            alt="Logo"
+            width={50}
+            height={50}
+            style={{ objectFit: "contain" }}
+          />
+          <Typography variant="h6" sx={{ marginLeft: 2 }}>
+            {user.name} {/* Display user name */}
+          </Typography>
+        </Box>
+        <Button color="inherit" onClick={handleSignOut}>
+          Sign Out
+        </Button>
+      </Toolbar>
+    </AppBar>
+  );
+};
+
+export default function Home({ user, setAuthing }) {
+  const [inventory, setInventory] = useState([]);
+  const [filteredInventory, setFilteredInventory] = useState([]);
   const [open, setOpen] = useState(false);
-  const [itemName, setItemName] = useState('');
-  const [shelfName, setShelfName] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [location, setLocation] = useState('');
+  const [itemName, setItemName] = useState("");
+  const [searchQuery, setSearchQuery] = useState(""); // New state for search query
+  const [userName, setUserName] = useState(""); // Initialize userName
 
-  const handleOpen = () => setOpen(true);
-  const handleClose = () => setOpen(false);
+  const handleOpen = () => {
+    setOpen(true);
+  };
 
-  const updateInventory = async (selectedLocation) => {
-    setLoading(true);
-    const q = query(collection(firestore, 'inventory'), where('location', '==', selectedLocation));
-    const querySnapshot = await getDocs(q);
-    const items = {};
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      const { shelf, name, quantity } = data;
-      if (!items[shelf]) {
-        items[shelf] = [];
-      }
-      items[shelf].push({ name, quantity, id: doc.id });
-    });
-    setInventory(items);
-    setLoading(false);
+  const handleClose = () => {
+    setOpen(false);
+  };
+
+  const updateInventory = async () => {
+    if (user) {
+      const snapshot = query(
+        collection(firestore, "users", user.uid, "inventory")
+      );
+      const docs = await getDocs(snapshot);
+      const inventoryList = [];
+      docs.forEach((doc) => {
+        inventoryList.push({ name: doc.id, ...doc.data() });
+      });
+      setInventory(inventoryList);
+    }
   };
 
   useEffect(() => {
-    if (location) {
-      updateInventory(location);
-    }
-  }, [location]);
+    updateInventory();
+  }, [user]);
 
-  const addItem = async (item, shelf, location) => {
-    const docRef = doc(collection(firestore, 'inventory'), `${location}-${item}`);
+  const fetchUserName = async () => {
+    if (user && user.uid) {
+      console.log("Fetching user with UID:", user.uid);
+      try {
+        const userDoc = doc(firestore, "users", user.uid);
+        const userSnapshot = await getDoc(userDoc);
+
+        if (userSnapshot.exists()) {
+          console.log("User data:", userSnapshot.data()); // Check data
+          const userData = userSnapshot.data();
+          console.log("userData:", userData);
+          setUserName(userData.name);
+        } else {
+          console.log("No document found for UID:", user.uid);
+        }
+      } catch (error) {
+        console.error("Error fetching document:", error);
+      }
+    } else {
+      console.log("User or UID is not available.");
+    }
+  };
+
+  useEffect(() => {
+    console.log("User object:", user); // Check if user.uid is valid
+    fetchUserName();
+  }, [user]);
+
+  useEffect(() => {
+    // Filter inventory based on search query
+    if (searchQuery === "") {
+      setFilteredInventory(inventory);
+    } else {
+      setFilteredInventory(
+        inventory.filter((item) =>
+          item.name.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      );
+    }
+  }, [searchQuery, inventory]);
+
+  const addItem = async (item) => {
+    const docRef = doc(
+      collection(firestore, "users", user.uid, "inventory"),
+      item
+    );
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const { quantity } = docSnap.data();
-      await setDoc(docRef, { name: item, quantity: quantity + 1, shelf, location });
+      await setDoc(docRef, { quantity: quantity + 1 });
     } else {
-      await setDoc(docRef, { name: item, quantity: 1, shelf, location });
+      await setDoc(docRef, { quantity: 1 });
     }
-    await updateInventory(location);
+    await updateInventory();
   };
 
-  const removeItem = async (item, shelf, location) => {
-    const docRef = doc(collection(firestore, 'inventory'), `${location}-${item}`);
+  const removeItem = async (item) => {
+    const docRef = doc(
+      collection(firestore, "users", user.uid, "inventory"),
+      item
+    );
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const { quantity } = docSnap.data();
       if (quantity === 1) {
         await deleteDoc(docRef);
       } else {
-        await setDoc(docRef, { name: item, quantity: quantity - 1, shelf, location });
+        await setDoc(docRef, { quantity: quantity - 1 });
       }
     }
-    await updateInventory(location);
+    await updateInventory();
   };
 
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const handleSignOut = () => {
+    removeLoginCookie();
+    setAuthing(0);
+  };
 
   return (
-    <Box
-      width="100vw"
-      height="100vh"
-      display="flex"
-      justifyContent="center"
-      alignItems="center"
-      className="bg-gray-100 p-4"
-    >
-      <Box className="w-full max-w-4xl mx-auto p-8 bg-white shadow-lg rounded-lg">
-        <Box className="bg-blue-600 text-white p-6 rounded-t-lg mb-4">
-          <Typography variant="h3" component="h1" className="text-center font-bold">
-            Inventory Management
-          </Typography>
-        </Box>
-        <FormControl fullWidth className="mb-6">
-          <InputLabel id="location-select-label">Location</InputLabel>
-          <Select
-            labelId="location-select-label"
-            id="location-select"
-            value={location}
-            label="Location"
-            onChange={(e) => setLocation(e.target.value)}
-            className="bg-white"
+    <Box width="100vw" height="100vh">
+      <NavBar user={{ name: userName }} handleSignOut={handleSignOut} />
+      <Box
+        display={"flex"}
+        flexDirection={"column"}
+        alignItems={"center"}
+        gap={2}
+        marginTop="64px" // Adjust this value based on the height of your NavBar
+      >
+        <Modal
+          open={open}
+          onClose={handleClose}
+          aria-labelledby="modal-modal-title"
+          aria-describedby="modal-modal-description"
+        >
+          <Box sx={style}>
+            <Typography id="modal-modal-title" variant="h6" component="h2">
+              Add Item
+            </Typography>
+            <Stack width="100%" direction={"row"} spacing={2}>
+              <TextField
+                id="outlined-basic"
+                label="Item"
+                variant="outlined"
+                fullWidth
+                value={itemName}
+                onChange={(e) => setItemName(e.target.value)}
+              />
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  addItem(itemName);
+                  setItemName("");
+                  handleClose();
+                }}
+              >
+                Add
+              </Button>
+            </Stack>
+          </Box>
+        </Modal>
+        <Button variant="contained" onClick={handleOpen}>
+          Add New Item
+        </Button>
+        <Box border={"1px solid #333"}>
+          <Box
+            width="800px"
+            height="100px"
+            bgcolor={"#123456"}
+            display={"flex"}
+            justifyContent={"center"}
+            alignItems={"center"}
           >
-            <MenuItem value="Westgate">Westgate</MenuItem>
-            <MenuItem value="Glass Co">Glass Co</MenuItem>
-          </Select>
-        </FormControl>
-        {location && (
-          <>
-            <Button
-              variant="contained"
-              color="primary"
-              className="mb-6 w-full py-3 bg-blue-500 hover:bg-blue-700"
-              onClick={handleOpen}
-            >
-              Add New Item
-            </Button>
-            <Modal
-              open={open}
-              onClose={handleClose}
-              aria-labelledby="modal-modal-title"
-              aria-describedby="modal-modal-description"
-            >
-              <Box sx={style} className="bg-white">
-                <Typography id="modal-modal-title" variant="h6" component="h2" className="text-center mb-4">
-                  Add Item
+            <Typography variant={"h2"} color={"#ffffff"} textAlign={"center"}>
+              Inventory Items
+            </Typography>
+          </Box>
+          <Stack width="800px" height="400px" spacing={2} overflow={"auto"}>
+            {filteredInventory.map(({ name, quantity }) => (
+              <Box
+                key={name}
+                width="100%"
+                minHeight="100px"
+                display={"flex"}
+                justifyContent={"space-between"}
+                alignItems={"center"}
+                bgcolor={"#f0f0f0"}
+                paddingX={5}
+              >
+                <Typography variant={"h3"} color={"#333"} textAlign={"center"}>
+                  {name.charAt(0).toUpperCase() + name.slice(1)}
                 </Typography>
-                <Stack width="100%" direction="column" spacing={2}>
-                  <TextField
-                    id="outlined-item"
-                    label="Item"
-                    variant="outlined"
-                    fullWidth
-                    value={itemName}
-                    onChange={(e) => setItemName(e.target.value)}
-                    className="bg-white"
-                  />
-                  <TextField
-                    id="outlined-shelf"
-                    label="Shelf"
-                    variant="outlined"
-                    fullWidth
-                    value={shelfName}
-                    onChange={(e) => setShelfName(e.target.value)}
-                    className="bg-white"
-                  />
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    className="bg-blue-500 hover:bg-blue-700"
-                    onClick={() => {
-                      addItem(itemName, shelfName, location);
-                      setItemName('');
-                      setShelfName('');
-                      handleClose();
-                    }}
-                  >
-                    Add
-                  </Button>
-                </Stack>
-              </Box>
-            </Modal>
-            {Object.keys(inventory).map((shelf) => (
-              <Box key={shelf} className="my-4">
-                <Box
-                  width="100%"
-                  className="bg-blue-200 flex justify-center items-center rounded-t-lg py-4 shadow"
-                >
-                  <Typography variant="h5" color="#333" className="text-center font-semibold">
-                    {shelf}
-                  </Typography>
-                </Box>
-                <TableContainer component={Paper} className="rounded-b-lg shadow-lg">
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Item</TableCell>
-                        <TableCell align="right">Quantity</TableCell>
-                        <TableCell align="right">Actions</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {inventory[shelf].map(({ name, quantity, id }) => (
-                        <TableRow key={id}>
-                          <TableCell component="th" scope="row">
-                            {name ? name.charAt(0).toUpperCase() + name.slice(1) : 'Unknown Item'}
-                          </TableCell>
-                          <TableCell align="right">{quantity}</TableCell>
-                          <TableCell align="right">
-                            <Button
-                              variant="contained"
-                              color="secondary"
-                              className="bg-red-500 hover:bg-red-700"
-                              onClick={() => removeItem(name, shelf, location)}
-                            >
-                              Remove
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                <Typography variant={"h3"} color={"#333"} textAlign={"center"}>
+                  Quantity: {quantity}
+                </Typography>
+                <Button variant="contained" onClick={() => removeItem(name)}>
+                  Remove
+                </Button>
               </Box>
             ))}
-          </>
-        )}
+          </Stack>
+          <TextField
+            id="search-bar"
+            label="Search Items"
+            variant="outlined"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            sx={{ width: "800px" }}
+          />
+        </Box>
       </Box>
     </Box>
   );
 }
-
